@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hallo!</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0f0c29; overflow: hidden; }
+  #stage {
+    position: relative; width: 1280px; height: 720px; overflow: hidden;
+    transform-origin: 0 0;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  }
+  #bg { position: absolute; inset: 0; }
+  canvas { position: absolute; inset: 0; }
+  #word {
+    position: absolute; left: 0; right: 0; top: 230px;
+    display: flex; justify-content: center; align-items: baseline; gap: 4px;
+  }
+  .letter {
+    display: inline-block; font-size: 190px; font-weight: 900; color: #fff;
+    text-shadow: 0 10px 40px rgba(0,0,0,.35);
+    will-change: transform, opacity;
+  }
+  #hand {
+    display: inline-block; font-size: 150px; margin-left: 30px;
+    transform-origin: 70% 90%;
+    font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  }
+  #sub {
+    position: absolute; left: 0; right: 0; top: 500px; text-align: center;
+    font-size: 46px; font-weight: 600; color: rgba(255,255,255,.92); letter-spacing: 1px;
+  }
+  #sig {
+    position: absolute; left: 0; right: 0; top: 575px; text-align: center;
+    font-size: 26px; color: rgba(255,255,255,.65); letter-spacing: 6px; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <canvas id="fx" width="1280" height="720"></canvas>
+  <div id="word"></div>
+  <div id="sub">Schön, dass du da bist!</div>
+  <div id="sig">– dein Claude</div>
+</div>
+
+<script>
+// Gesamtdauer der Animation in Sekunden
+const DURATION = 6;
+const COLORS = ["#ff6b6b", "#feca57", "#48dbfb", "#ff9ff3", "#1dd1a1"];
+
+// --- Hilfsfunktionen --------------------------------------------------------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, start, len) => clamp((t - start) / len);
+const easeOutBack = x => { const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
+const easeInCubic = x => x * x * x;
+
+// Deterministischer Zufall, damit jedes Rendering identisch aussieht
+let seed = 42;
+const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+// --- Aufbau -----------------------------------------------------------------
+const word = document.getElementById("word");
+const letters = [..."Hallo"].map((ch, i) => {
+  const s = document.createElement("span");
+  s.className = "letter";
+  s.textContent = ch;
+  s.style.color = COLORS[i % COLORS.length];
+  word.appendChild(s);
+  return s;
+});
+const hand = document.createElement("span");
+hand.id = "hand";
+hand.textContent = "👋";
+word.appendChild(hand);
+
+const sub = document.getElementById("sub");
+const sig = document.getElementById("sig");
+const bg = document.getElementById("bg");
+const ctx = document.getElementById("fx").getContext("2d");
+
+// Konfetti, das ausbricht, sobald "Hallo" komplett ist
+const BURST_T = 1.6;
+const confetti = Array.from({ length: 140 }, () => {
+  const a = rand() * Math.PI * 2, sp = 250 + rand() * 650;
+  return {
+    vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 300,
+    rot: rand() * 6, vr: (rand() - .5) * 14,
+    w: 8 + rand() * 10, h: 5 + rand() * 6,
+    c: COLORS[Math.floor(rand() * COLORS.length)],
+  };
+});
+// Schwebende Lichtpunkte im Hintergrund
+const dots = Array.from({ length: 40 }, () => ({
+  x: rand() * 1280, y: rand() * 720, r: 1 + rand() * 3, sp: 10 + rand() * 30, ph: rand() * 6,
+}));
+
+// --- Render-Funktion: zeichnet den Zustand zum Zeitpunkt t (Sekunden) -------
+function render(t) {
+  // Hintergrund: langsam rotierender Farbverlauf
+  const ang = 120 + t * 12;
+  bg.style.background = `linear-gradient(${ang}deg, #0f0c29, #302b63 55%, #24243e)`;
+
+  // Buchstaben springen nacheinander herein
+  letters.forEach((el, i) => {
+    const p = prog(t, 0.25 + i * 0.18, 0.55);
+    const s = easeOutBack(p);
+    const y = (1 - easeOutCubic(p)) * 160;
+    // nach dem Einflug: sanftes Wellen
+    const wave = t > 2 ? Math.sin((t - 2) * 4 - i * 0.7) * 10 : 0;
+    el.style.opacity = clamp(p * 3);
+    el.style.transform = `translateY(${y + wave}px) scale(${s}) rotate(${(1 - p) * -25}deg)`;
+  });
+
+  // Winkende Hand
+  const hp = prog(t, 1.25, 0.5);
+  const waveAngle = t > 1.5 ? Math.sin((t - 1.5) * 11) * 22 * clamp((t - 1.5) * 2) : 0;
+  hand.style.opacity = hp;
+  hand.style.transform = `scale(${easeOutBack(hp)}) rotate(${waveAngle}deg)`;
+
+  // Untertitel + Signatur
+  const sp = easeOutCubic(prog(t, 2.0, 0.8));
+  sub.style.opacity = sp;
+  sub.style.transform = `translateY(${(1 - sp) * 30}px)`;
+  const gp = easeOutCubic(prog(t, 2.6, 0.8));
+  sig.style.opacity = gp;
+  sig.style.letterSpacing = `${6 + (1 - gp) * 14}px`;
+
+  // Ausblenden am Ende
+  const out = easeInCubic(prog(t, DURATION - 0.6, 0.6));
+  document.getElementById("stage").style.opacity = 1 - out;
+
+  // Canvas: Lichtpunkte + Konfetti
+  ctx.clearRect(0, 0, 1280, 720);
+  for (const d of dots) {
+    const y = (d.y - t * d.sp + 720) % 720;
+    ctx.globalAlpha = 0.25 + 0.25 * Math.sin(t * 2 + d.ph);
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(d.x, y, d.r, 0, Math.PI * 2); ctx.fill();
+  }
+  const ct = t - BURST_T;
+  if (ct > 0) {
+    for (const c of confetti) {
+      const x = 640 + c.vx * ct;
+      const y = 330 + c.vy * ct + 0.5 * 900 * ct * ct; // Schwerkraft
+      ctx.globalAlpha = clamp(1 - ct / 3.2);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(c.rot + c.vr * ct);
+      ctx.fillStyle = c.c;
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+      ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Für den Video-Export: Seite wird Bild für Bild über window.render(t) gesteuert
+window.render = render;
+window.DURATION = DURATION;
+
+// Im normalen Browser: in Schleife abspielen und ans Fenster anpassen
+if (!new URLSearchParams(location.search).has("export")) {
+  const stage = document.getElementById("stage");
+  const fit = () => {
+    const k = Math.min(innerWidth / 1280, innerHeight / 720);
+    stage.style.transform = `scale(${k})`;
+    stage.style.marginLeft = `${(innerWidth - 1280 * k) / 2}px`;
+    stage.style.marginTop = `${(innerHeight - 720 * k) / 2}px`;
+  };
+  addEventListener("resize", fit); fit();
+  const t0 = performance.now();
+  const loop = now => { render(((now - t0) / 1000) % (DURATION + 0.5)); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+} else {
+  render(0);
+}
+</script>
+</body>
+</html>
